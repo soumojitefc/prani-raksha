@@ -12,7 +12,17 @@ export async function GET(request) {
   formData.set('Body', body)
   formData.set('To', 'whatsapp:+14155238886')
   formData.set('NumMedia', '0')
-  formData.set('MessageType', 'text')
+formData.set('MessageType', 'text')
+
+// Simulate GPS pin if lat/lng provided
+const lat = searchParams.get('lat')
+const lng = searchParams.get('lng')
+if (lat && lng) {
+  formData.set('Latitude', lat)
+  formData.set('Longitude', lng)
+  formData.set('Address', 'Test Location')
+  formData.set('Label', 'Simulated Pin')
+}
 
   // Forward to the actual bot handler
   const botResponse = await fetch(
