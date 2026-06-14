@@ -269,31 +269,63 @@ function twiml(message) {
 }
 
 // =============================================================================
-// SESSION HELPERS
+// SESSION HELPERS — direct table ops, RPC bypassed (was silently failing)
 // =============================================================================
 async function getSession(phone) {
-  const { data, error } = await supabase.rpc('get_whatsapp_session', {
-    p_phone: phone
-  })
-  if (error || !data || data.length === 0) {
+  const { data, error } = await supabase
+    .from('whatsapp_sessions')
+    .select('state, partial_data, expires_at')
+    .eq('phone_number', phone)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[SESSION GET ERROR]', phone, error.message)
     return { state: 'idle', partial_data: {} }
   }
-  return { state: data[0].state, partial_data: data[0].partial_data || {} }
+  if (!data) {
+    return { state: 'idle', partial_data: {} }
+  }
+  if (data.expires_at && new Date(data.expires_at) < new Date()) {
+    return { state: 'idle', partial_data: {} }
+  }
+  // partial_data is jsonb — Supabase returns it already parsed as an object
+  // Guard against any corrupted row that stored a raw string
+  let parsed = data.partial_data
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed) } catch { parsed = {} }
+  }
+  return { state: data.state || 'idle', partial_data: parsed || {} }
 }
 
 async function saveSession(phone, state, partialData) {
-  await supabase.rpc('upsert_whatsapp_session', {
-    p_phone: phone,
-    p_state: state,
-    p_partial_data: partialData
-  })
+  const { error } = await supabase
+    .from('whatsapp_sessions')
+    .upsert(
+      {
+        phone_number: phone,
+        state:        state,
+        partial_data: partialData,
+        updated_at:   new Date().toISOString(),
+        expires_at:   new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      },
+      { onConflict: 'phone_number' }
+    )
+
+  if (error) {
+    // Log but never throw — a failed session save must not crash the reply
+    console.error('[SESSION SAVE ERROR]', phone, state, error.message)
+  }
 }
 
 async function clearSession(phone) {
-  await supabase
+  const { error } = await supabase
     .from('whatsapp_sessions')
     .delete()
     .eq('phone_number', phone)
+
+  if (error) {
+    console.error('[SESSION CLEAR ERROR]', phone, error.message)
+  }
 }
 
 // =============================================================================
