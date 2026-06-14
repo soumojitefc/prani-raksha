@@ -256,14 +256,8 @@ function parseLocation(formData, bodyText) {
 // TWIML RESPONSE BUILDER
 // =============================================================================
 function twiml(message) {
-  // Escape XML special characters in message text
-  const safe = message
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
   return new Response(
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safe}</Message></Response>`,
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Message><![CDATA[${message}]]></Message></Response>`,
     { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } }
   )
 }
