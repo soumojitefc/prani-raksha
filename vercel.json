@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/assign-closest",
-      "schedule": "* * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
