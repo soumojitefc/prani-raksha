@@ -650,6 +650,8 @@ export async function POST(request) {
   const fromRaw     = formData.get('From') || ''
   const bodyRaw     = (formData.get('Body') || '').trim()
   const body        = bodyRaw.toLowerCase()
+// TEMP DEBUG — remove after fix
+  console.log('[DEBUG FORM]', JSON.stringify(Object.fromEntries(formData.entries())))
 
   // Normalize phone: remove "whatsapp:" prefix for DB storage
   const phone = fromRaw.replace('whatsapp:', '')
