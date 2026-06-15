@@ -601,13 +601,14 @@ export async function POST(request) {
 
     const { incident_id, area_name, has_coordinates } = submitResult[0]
 
-    fireRescuerAlerts(
+    // MUST be awaited — Vercel kills unawaited promises the moment response returns
+    await fireRescuerAlerts(
       incident_id,
       data.species || 'Dog',
       data.severity || 'medium',
       area_name,
       data.landmark || ''
-    ).catch(e => console.error('[bot] fireRescuerAlerts async error:', e))
+    )
 
     if (has_coordinates) {
       return twiml(MSG.REPORT_SUBMITTED_WITH_COORDS(data.species || 'animal', area_name, phoneShared))
