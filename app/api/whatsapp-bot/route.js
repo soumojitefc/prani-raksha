@@ -458,7 +458,86 @@ export async function POST(request) {
   const phone = fromRaw.replace('whatsapp:', '')
   if (!phone) return twiml('Message received.')
 
-  // Hard keywords
+  // =============================================================================
+// RESCUER ACCEPTANCE — must run before session logic and before menu keywords
+// Rescuer gets an alert cold, replies "1" with no active session
+// =============================================================================
+if (body === '1') {
+  const { data: pendingAlert } = await supabase
+    .from('alert_log')
+    .select('incident_id')
+    .eq('rescuer_phone', phone)
+    .is('responded_at', null)
+    .eq('delivery_status', 'sent')
+    .gte('alerted_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
+    .order('alerted_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (pendingAlert) {
+    await supabase
+      .from('alert_log')
+      .update({
+        responded_at: new Date().toISOString(),
+        response_type: 'accepted'
+      })
+      .eq('incident_id', pendingAlert.incident_id)
+      .eq('rescuer_phone', phone)
+
+    const { data: acceptResult } = await supabase.rpc('incident_accepted_by_rescuer', {
+      p_incident_id: pendingAlert.incident_id,
+      p_rescuer_phone: phone
+    })
+
+    if (!acceptResult || acceptResult.length === 0) {
+      return twiml('System error on assignment. Call +919830000011.')
+    }
+
+    const result = acceptResult[0]
+
+    if (!result.success) {
+      return twiml('This rescue was already accepted by someone closer. Thank you for responding!')
+    }
+
+    const { data: incidentRow } = await supabase
+      .from('incidents')
+      .select('reporter_phone_shared, reporter_whatsapp_number, animal_species, landmark_text')
+      .eq('id', pendingAlert.incident_id)
+      .single()
+
+    const species = incidentRow?.animal_species || 'Animal'
+    const landmark = incidentRow?.landmark_text || 'Use GPS coordinates'
+
+    if (incidentRow?.reporter_whatsapp_number) {
+      await notifyReporter(incidentRow.reporter_whatsapp_number, result.rescuer_name, species)
+    }
+
+    const phoneSection = (incidentRow?.reporter_phone_shared && incidentRow?.reporter_whatsapp_number)
+      ? '\nReporter number: ' + incidentRow.reporter_whatsapp_number + ' (call for exact directions)'
+      : '\nReporter is anonymous. Use landmark below.'
+
+    const mapsSection = result.incident_lat
+      ? '\nNavigate here:\nhttps://www.google.com/maps/dir/?api=1&destination=' + result.incident_lat + ',' + result.incident_lng
+      : ''
+
+    return twiml(
+      'RESCUE CONFIRMED\n\n' +
+      'You have been assigned this rescue, ' + result.rescuer_name + '.\n' +
+      mapsSection +
+      phoneSection + '\n\n' +
+      'Exact spot: ' + landmark + '\n\n' +
+      'Status updates - reply:\n' +
+      'ONSITE when you arrive\n' +
+      'CLINIC when animal is in vehicle\n' +
+      'DONE when animal admitted to clinic\n\n' +
+      'If you have concerns, text ISSUE'
+    )
+  }
+  // No pending alert found — fall through to session logic below
+  // (handles "1" inside menu flow or report flow normally)
+}
+
+    // Hard keywords
   if (['hi', 'hello', 'menu', 'start'].includes(body)) {
     await saveSession(phone, 'menu', {})
     return twiml(MSG.MENU)
@@ -665,9 +744,6 @@ export async function POST(request) {
     return twiml(MSG.JOIN_SUBMITTED(newData.name, ROLE_LABEL_MAP[newData.role] || newData.role))
   }
 
-  if (body === '1') {
-    return handleRescueAccept(fromRaw, session)
-  }
 
   if (body === '2') {
     return twiml(`Understood. Thank you for letting us know.`)
