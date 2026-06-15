@@ -520,7 +520,8 @@ if (body === '1') {
       ? '\nNavigate here:\nhttps://www.google.com/maps/dir/?api=1&destination=' + result.incident_lat + ',' + result.incident_lng
       : ''
 
-    return twiml(
+    console.log('[bot] RESCUE CONFIRMED response for', phone, '| rescuer_name:', result.rescuer_name, '| lat:', result.incident_lat)
+      return twiml(
       'RESCUE CONFIRMED\n\n' +
       'You have been assigned this rescue, ' + result.rescuer_name + '.\n' +
       mapsSection +
