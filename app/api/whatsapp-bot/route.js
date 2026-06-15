@@ -276,50 +276,87 @@ async function clearSession(phone) {
 // =============================================================================
 async function fireRescuerAlerts(incidentId, species, severity, areaName, landmarkText) {
   try {
-    const { data: rescuers } = await supabase.rpc('get_nearby_rescuers', {
+    const { data: rescuers, error: rescuerErr } = await supabase.rpc('get_nearby_rescuers', {
       p_incident_id: incidentId,
       p_radius_meters: 5000.0
     })
 
+    if (rescuerErr) {
+      console.error('[bot] get_nearby_rescuers failed:', rescuerErr.message)
+      return
+    }
+
     if (!rescuers || rescuers.length === 0) {
-      console.warn(`[bot] No rescuers within 5km for incident ${incidentId}`)
+      console.warn('[bot] No rescuers within 5km for incident', incidentId)
       return
     }
 
     const unalerted = rescuers.filter(r => !r.already_alerted)
-    if (unalerted.length === 0) return
+    if (unalerted.length === 0) {
+      console.log('[bot] All nearby rescuers already alerted for', incidentId)
+      return
+    }
 
     const severityLabel = severity === 'critical_survival' ? 'CRITICAL'
       : severity === 'medium' ? 'URGENT' : 'LOW'
 
-    const alertMsg = (
-      `PRANI RAKSHA ALERT\n` +
-      `${severityLabel} | ${species} | ${areaName}\n\n` +
-      `Location: ${landmarkText}\n\n` +
-      `Reply 1 to ACCEPT this rescue\n` +
-      `Reply 2 to skip\n\n` +
-      `ID: ${incidentId.substring(0, 8)}`
-    )
+    const alertMsg =
+      'PRANI RAKSHA ALERT\n' +
+      severityLabel + ' | ' + species + ' | ' + areaName + '\n\n' +
+      'Location: ' + landmarkText + '\n\n' +
+      'Reply 1 to ACCEPT this rescue\n' +
+      'Reply 2 to skip\n\n' +
+      'ID: ' + incidentId.substring(0, 8)
 
     await Promise.allSettled(
       unalerted.map(async (rescuer) => {
         const toNumber = rescuer.phone_number.startsWith('+')
-          ? `whatsapp:${rescuer.phone_number}`
-          : `whatsapp:+91${rescuer.phone_number}`
+          ? 'whatsapp:' + rescuer.phone_number
+          : 'whatsapp:+91' + rescuer.phone_number
+
+        let twilioSid = null
+
+        // --- Send the WhatsApp message ---
         try {
-          await twilioClient.messages.create({
+          const message = await twilioClient.messages.create({
             from: process.env.TWILIO_WHATSAPP_FROM,
             to: toNumber,
             body: alertMsg
           })
-          console.log(`[bot] Alert sent to ${rescuer.phone_number}`)
-        } catch (e) {
-          console.error(`[bot] Twilio failed for ${rescuer.phone_number}:`, e.message)
+          twilioSid = message.sid
+          console.log('[bot] Alert sent to', rescuer.phone_number, '| SID:', twilioSid)
+        } catch (twilioErr) {
+          // One rescuer's Twilio failure must never block the others
+          console.error('[bot] Twilio failed for', rescuer.phone_number, ':', twilioErr.message)
+        }
+
+        // --- Always write to alert_log, whether send succeeded or failed ---
+        // twilioSid = null means delivery_status will be 'failed' in the DB
+        // This is your audit trail. Never skip this write.
+        try {
+          const { error: logErr } = await supabase
+            .from('alert_log')
+            .insert({
+              incident_id: incidentId,
+              rescuer_id: rescuer.id,
+              rescuer_phone: rescuer.phone_number,
+              distance_meters: rescuer.distance_meters || null,
+              twilio_message_sid: twilioSid,
+              delivery_status: twilioSid ? 'sent' : 'failed'
+            })
+
+          if (logErr) {
+            console.error('[bot] alert_log write failed for', rescuer.phone_number, ':', logErr.message)
+          }
+        } catch (logWriteErr) {
+          // Log write failure must never crash the bot either
+          console.error('[bot] alert_log exception for', rescuer.phone_number, ':', logWriteErr.message)
         }
       })
     )
+
   } catch (err) {
-    console.error('[bot] fireRescuerAlerts error:', err)
+    console.error('[bot] fireRescuerAlerts fatal error:', err)
   }
 }
 
