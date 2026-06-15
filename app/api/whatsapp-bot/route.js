@@ -338,7 +338,7 @@ async function fireRescuerAlerts(incidentId, species, severity, areaName, landma
             .from('alert_log')
             .insert({
               incident_id: incidentId,
-              rescuer_id: rescuer.id,
+              rescuer_id: rescuer.rescuer_id,
               rescuer_phone: rescuer.phone_number,
               distance_meters: rescuer.distance_meters || null,
               twilio_message_sid: twilioSid,
