@@ -521,18 +521,27 @@ if (body === '1') {
       : ''
 
     console.log('[bot] RESCUE CONFIRMED response for', phone, '| rescuer_name:', result.rescuer_name, '| lat:', result.incident_lat)
-      return twiml(
-      'RESCUE CONFIRMED\n\n' +
-      'You have been assigned this rescue, ' + result.rescuer_name + '.\n' +
-      mapsSection +
-      phoneSection + '\n\n' +
-      'Exact spot: ' + landmark + '\n\n' +
-      'Status updates - reply:\n' +
-      'ONSITE when you arrive\n' +
-      'CLINIC when animal is in vehicle\n' +
-      'DONE when animal admitted to clinic\n\n' +
-      'If you have concerns, text ISSUE'
-    )
+
+    try {
+      await twilioClient.messages.create({
+        from: process.env.TWILIO_WHATSAPP_FROM,
+        to: 'whatsapp:' + phone,
+        body: 'RESCUE CONFIRMED\n\n' +
+          'You have been assigned this rescue, ' + result.rescuer_name + '.\n' +
+          mapsSection +
+          phoneSection + '\n\n' +
+          'Exact spot: ' + landmark + '\n\n' +
+          'Status updates - reply:\n' +
+          'ONSITE when you arrive\n' +
+          'CLINIC when animal is in vehicle\n' +
+          'DONE when animal admitted to clinic\n\n' +
+          'If you have concerns, text ISSUE'
+      })
+    } catch (sendErr) {
+      console.error('[bot] rescue confirm send failed:', sendErr.message)
+    }
+
+    return twiml('Rescue assigned. Check WhatsApp for details.')
   }
   // No pending alert found — fall through to session logic below
   // (handles "1" inside menu flow or report flow normally)
